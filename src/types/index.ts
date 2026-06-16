@@ -1,11 +1,20 @@
-export interface Location {
+export interface Business {
   id: string;
   name: string;
+  description: string | null;
+  logo_url: string | null;
+  created_at: string;
+}
+
+export interface Location {
+  id: string;
+  business_id?: string;
+  name: string;
   slug: string;
-  address: string;
-  phone: string;
+  address: string | null;
+  phone: string | null;
   tax_rate: number;
-  is_open: boolean;
+  is_open?: boolean;
   created_at: string;
 }
 
@@ -37,6 +46,16 @@ export interface CartItem {
   image_url: string;
 }
 
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  menu_item_id: string;
+  name: string;
+  quantity: number;
+  price_cents: number;
+  created_at: string;
+}
+
 export interface Order {
   id: string;
   location_id: string;
@@ -54,15 +73,5 @@ export interface Order {
   license_plate: string | null;
   parking_spot: string | null;
   checked_in_at: string | null;
-  created_at: string;
-}
-
-export interface OrderItem {
-  id: string;
-  order_id: string;
-  menu_item_id: string;
-  name: string;
-  quantity: number;
-  price_cents: number;
   created_at: string;
 }
