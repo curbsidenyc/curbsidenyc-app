@@ -1,19 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
-      },
-    ],
+    remotePatterns: [{ protocol: "https", hostname: "images.unsplash.com" }],
+  },
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
   },
 };
 
