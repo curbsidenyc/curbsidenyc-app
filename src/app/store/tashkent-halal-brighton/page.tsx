@@ -18,12 +18,13 @@ export default function StorePage() {
 
   useEffect(() => {
     async function load() {
-      const { data: loc } = await supabase
-        .from("locations")
-        .select("*")
-        .eq("slug", "tashkent-halal-brighton")
-        .single();
-      if (!loc) { setLoading(false); return; }
+      const { data: loc, error: locError } = await supabase
+  .from("locations")
+  .select("*")
+  .eq("slug", "tashkent-halal-brighton")
+  .single();
+console.log("Location result:", loc, "Error:", locError);
+if (!loc) { setLoading(false); return; }
       setLocation(loc);
 
       const { data: cats } = await supabase
