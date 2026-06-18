@@ -17,32 +17,40 @@ export default function StorePage() {
   const heroRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    async function load() {
-      const { data: loc, error: locError } = await supabase
-  .from("locations")
-  .select("*")
-  .eq("slug", "tashkent-halal-brighton")
-  .single();
-console.log("Location result:", loc, "Error:", locError);
-if (!loc) { setLoading(false); return; }
-      setLocation(loc);
+async function load() {
+  const { data: loc, error: locError } = await supabase
+    .from("locations")
+    .select("*")
+    .eq("slug", "tashkent-halal-brighton")
+    .maybeSingle();
 
-      const { data: cats } = await supabase
-        .from("menu_categories")
-        .select("*")
-        .eq("location_id", loc.id)
-        .order("position");
-      setCategories(cats ?? []);
-      if (cats && cats.length > 0) setActiveCategory(cats[0].id);
+  console.log("loc:", loc, "error:", locError);
 
-      const { data: menuItems } = await supabase
-        .from("menu_items")
-        .select("*")
-        .eq("location_id", loc.id)
-        .eq("is_available", true);
-      setItems(menuItems ?? []);
-      setLoading(false);
-    }
+  if (locError || !loc) {
+    // Try fetching all locations as fallback
+    const { data: allLocs } = await supabase.from("locations").select("*");
+    console.log("All locations:", allLocs);
+    setLoading(false);
+    return;
+  }
+  setLocation(loc);
+
+  const { data: cats } = await supabase
+    .from("menu_categories")
+    .select("*")
+    .eq("location_id", loc.id)
+    .order("position");
+  setCategories(cats ?? []);
+  if (cats && cats.length > 0) setActiveCategory(cats[0].id);
+
+  const { data: menuItems } = await supabase
+    .from("menu_items")
+    .select("*")
+    .eq("location_id", loc.id)
+    .eq("is_available", true);
+  setItems(menuItems ?? []);
+  setLoading(false);
+}
     load();
   }, []);
 
