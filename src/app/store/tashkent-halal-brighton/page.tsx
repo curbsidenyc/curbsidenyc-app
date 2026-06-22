@@ -1,6 +1,6 @@
 "use client";
-export const dynamic = 'force-dynamic';
-import { useEffect, useState, useRef } from "react";
+
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Location, MenuCategory, MenuItem, CartItem } from "@/types";
@@ -14,43 +14,46 @@ export default function StorePage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const heroRef = useRef<HTMLDivElement>(null);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   useEffect(() => {
-async function load() {
-  const { data: loc, error: locError } = await supabase
-    .from("locations")
-    .select("*")
-    .eq("slug", "tashkent-halal-brighton")
-    .maybeSingle();
+    async function load() {
+      const { data: loc, error: locErr } = await supabase
+        .from("locations")
+        .select("*")
+        .eq("slug", "tashkent-halal-brighton")
+        .maybeSingle();
 
-  console.log("loc:", loc, "error:", locError);
+      if (locErr) {
+        setErrorMsg("Error: " + locErr.message);
+        setLoading(false);
+        return;
+      }
 
-  if (locError || !loc) {
-    // Try fetching all locations as fallback
-    const { data: allLocs } = await supabase.from("locations").select("*");
-    console.log("All locations:", allLocs);
-    setLoading(false);
-    return;
-  }
-  setLocation(loc);
+      if (!loc) {
+        setErrorMsg("No location found with slug: tashkent-halal-brighton");
+        setLoading(false);
+        return;
+      }
 
-  const { data: cats } = await supabase
-    .from("menu_categories")
-    .select("*")
-    .eq("location_id", loc.id)
-    .order("position");
-  setCategories(cats ?? []);
-  if (cats && cats.length > 0) setActiveCategory(cats[0].id);
+      setLocation(loc);
 
-  const { data: menuItems } = await supabase
-    .from("menu_items")
-    .select("*")
-    .eq("location_id", loc.id)
-    .eq("is_available", true);
-  setItems(menuItems ?? []);
-  setLoading(false);
-}
+      const { data: cats } = await supabase
+        .from("menu_categories")
+        .select("*")
+        .eq("location_id", loc.id)
+        .order("position");
+      setCategories(cats ?? []);
+      if (cats && cats.length > 0) setActiveCategory(cats[0].id);
+
+      const { data: menuItems } = await supabase
+        .from("menu_items")
+        .select("*")
+        .eq("location_id", loc.id)
+        .eq("is_available", true);
+      setItems(menuItems ?? []);
+      setLoading(false);
+    }
     load();
   }, []);
 
@@ -97,16 +100,18 @@ async function load() {
     </div>
   );
 
-  if (!location) return (
+  if (errorMsg || !location) return (
     <div className="min-h-screen flex items-center justify-center">
-      <p className="text-gray-500">Store not found.</p>
+      <div className="text-center max-w-md px-4">
+        <p className="text-red-500 font-semibold mb-2">Store not found</p>
+        <p className="text-gray-400 text-sm">{errorMsg}</p>
+      </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-white">
-      {/* HERO */}
-      <div ref={heroRef} className="bg-white border-b border-gray-100">
+      <div className="bg-white border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 py-10 md:py-16">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div>
@@ -134,26 +139,18 @@ async function load() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 flex gap-8">
-        {/* LEFT: MENU */}
         <div className="flex-1 min-w-0" id="menu-section">
-          {/* Category Tabs */}
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-6">
             {categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
+              <button key={cat.id} onClick={() => setActiveCategory(cat.id)}
                 className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition border ${
-                  activeCategory === cat.id
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-                }`}
-              >
+                  activeCategory === cat.id ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                }`}>
                 {cat.name}
               </button>
             ))}
           </div>
 
-          {/* Menu Items */}
           <div className="space-y-3">
             {filteredItems.length === 0 && (
               <div className="text-center py-12 text-gray-400">
@@ -177,25 +174,19 @@ async function load() {
                 </div>
                 <div className="flex items-center shrink-0">
                   {getQty(item.id) === 0 ? (
-                    <button
-                      onClick={() => addToCart(item)}
-                      className="w-9 h-9 bg-green-600 hover:bg-green-700 text-white rounded-full flex items-center justify-center text-xl font-bold transition shadow-sm"
-                    >
+                    <button onClick={() => addToCart(item)}
+                      className="w-9 h-9 bg-green-600 hover:bg-green-700 text-white rounded-full flex items-center justify-center text-xl font-bold transition shadow-sm">
                       +
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="w-8 h-8 border border-gray-300 text-gray-700 rounded-full flex items-center justify-center text-lg font-bold hover:bg-gray-50 transition"
-                      >
+                      <button onClick={() => removeFromCart(item.id)}
+                        className="w-8 h-8 border border-gray-300 text-gray-700 rounded-full flex items-center justify-center text-lg font-bold hover:bg-gray-50 transition">
                         −
                       </button>
                       <span className="w-5 text-center font-semibold text-gray-900">{getQty(item.id)}</span>
-                      <button
-                        onClick={() => addToCart(item)}
-                        className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-lg font-bold hover:bg-green-700 transition"
-                      >
+                      <button onClick={() => addToCart(item)}
+                        className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-lg font-bold hover:bg-green-700 transition">
                         +
                       </button>
                     </div>
@@ -206,7 +197,6 @@ async function load() {
           </div>
         </div>
 
-        {/* RIGHT: DESKTOP CART SIDEBAR */}
         <div className="hidden lg:block w-80 shrink-0">
           <div className="sticky top-6">
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -224,7 +214,7 @@ async function load() {
                     <div className="flex items-center gap-2">
                       <button onClick={() => removeFromCart(item.id)} className="w-6 h-6 border border-gray-300 rounded-full text-sm flex items-center justify-center hover:bg-gray-50">−</button>
                       <span className="text-sm font-semibold w-4 text-center">{item.quantity}</span>
-                      <button onClick={() => addToCart({ ...item, category_id: "", location_id: "", description: "", is_available: true, created_at: "" })} className="w-6 h-6 bg-green-600 text-white rounded-full text-sm flex items-center justify-center hover:bg-green-700">+</button>
+                      <button onClick={() => addToCart(item)} className="w-6 h-6 bg-green-600 text-white rounded-full text-sm flex items-center justify-center hover:bg-green-700">+</button>
                     </div>
                   </div>
                 ))}
@@ -240,10 +230,8 @@ async function load() {
                   <div className="flex justify-between font-bold text-gray-900 text-base pt-1 border-t border-gray-100">
                     <span>Total</span><span>${(total / 100).toFixed(2)}</span>
                   </div>
-                  <button
-                    onClick={goToCheckout}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition mt-2"
-                  >
+                  <button onClick={goToCheckout}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition mt-2">
                     Checkout — ${(total / 100).toFixed(2)}
                   </button>
                 </div>
@@ -253,13 +241,10 @@ async function load() {
         </div>
       </div>
 
-      {/* MOBILE STICKY CART BAR */}
       {cartCount > 0 && (
         <div className="lg:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg z-50">
-          <button
-            onClick={goToCheckout}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-xl transition flex items-center justify-between px-5"
-          >
+          <button onClick={goToCheckout}
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-xl transition flex items-center justify-between px-5">
             <span className="bg-green-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">{cartCount}</span>
             <span>View Order</span>
             <span>${(total / 100).toFixed(2)}</span>
