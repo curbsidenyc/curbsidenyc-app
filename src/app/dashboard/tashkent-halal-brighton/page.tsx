@@ -10,6 +10,20 @@ interface OrderWithItems extends Order {
   order_items: OrderItem[];
 }
 
+interface MenuItemLocal {
+  id: string;
+  name: string;
+  description: string;
+  price_cents: number;
+  is_available: boolean;
+  category_id: string;
+}
+
+interface MenuCategoryLocal {
+  id: string;
+  name: string;
+}
+
 function playNotification() {
   try {
     const ctx = new AudioContext();
@@ -39,8 +53,10 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"orders" | "history" | "menu" | "settings">("orders");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [, setTick] = useState(0);
+  const [menuItems, setMenuItems] = useState<MenuItemLocal[]>([]);
+  const [menuCategories, setMenuCategories] = useState<MenuCategoryLocal[]>([]);
+  const [menuLoading, setMenuLoading] = useState(false);
 
-  // Refresh timestamps every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => setTick(t => t + 1), 30000);
     return () => clearInterval(interval);
@@ -64,8 +80,23 @@ export default function DashboardPage() {
         .maybeSingle();
       if (!loc) { setLoading(false); return; }
       setLocId(loc.id);
+
       const data = await loadOrders(loc.id);
       setOrders(data);
+
+      const { data: cats } = await supabase
+        .from("menu_categories")
+        .select("id, name")
+        .eq("location_id", loc.id)
+        .order("position");
+      setMenuCategories(cats ?? []);
+
+      const { data: items } = await supabase
+        .from("menu_items")
+        .select("id, name, description, price_cents, is_available, category_id")
+        .eq("location_id", loc.id);
+      setMenuItems(items ?? []);
+
       setLoading(false);
     }
     init();
@@ -100,6 +131,19 @@ export default function DashboardPage() {
     setOrders(fresh);
   }
 
+  async function toggleItemAvailability(itemId: string, current: boolean) {
+    setMenuLoading(true);
+    await supabase.from("menu_items").update({ is_available: !current }).eq("id", itemId);
+    setMenuItems(prev => prev.map(i => i.id === itemId ? { ...i, is_available: !current } : i));
+    setMenuLoading(false);
+  }
+
+  const paymentLabel: Record<string, string> = {
+    cash: "Cash",
+    card_pickup: "Card",
+    online: "Online",
+  };
+
   const todayOrders = orders.filter(o => {
     const created = new Date(o.created_at);
     const now = new Date();
@@ -110,12 +154,6 @@ export default function DashboardPage() {
   const preparingOrders = todayOrders.filter(o => o.status === "preparing");
   const readyOrders = todayOrders.filter(o => o.status === "ready");
   const completedOrders = todayOrders.filter(o => o.status === "delivered");
-
-  const paymentLabel: Record<string, string> = {
-    cash: "Cash",
-    card_pickup: "Card",
-    online: "Online",
-  };
 
   if (loading) return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -136,11 +174,11 @@ export default function DashboardPage() {
             <h2 className="font-bold text-gray-900 text-lg">Menu</h2>
             <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
           </div>
-
           <nav className="space-y-1">
             {[
               { id: "orders", icon: "📋", label: "Orders" },
               { id: "history", icon: "🕐", label: "Order History" },
+              { id: "menu", icon: "🍽️", label: "Menu" },
               { id: "settings", icon: "⚙️", label: "Settings" },
             ].map(item => (
               <button
@@ -153,7 +191,6 @@ export default function DashboardPage() {
               </button>
             ))}
           </nav>
-
           <div className="mt-8 pt-6 border-t border-gray-100">
             <p className="text-xs text-gray-400 font-medium uppercase mb-1">Location</p>
             <p className="text-sm font-semibold text-gray-700">Tashkent Halal</p>
@@ -172,10 +209,7 @@ export default function DashboardPage() {
         {/* TOP BAR */}
         <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg hover:bg-gray-100 transition"
-            >
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-gray-100 transition">
               <div className="space-y-1.5">
                 <span className="block w-5 h-0.5 bg-gray-600"></span>
                 <span className="block w-5 h-0.5 bg-gray-600"></span>
@@ -199,10 +233,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* ORDERS TAB */}
         {activeTab === "orders" && (
           <div className="flex-1 flex overflow-hidden">
 
-            {/* NEW ORDERS COLUMN */}
+            {/* NEW ORDERS */}
             <div className="flex-1 flex flex-col border-r border-gray-200 overflow-hidden">
               <div className="bg-white px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -248,7 +283,7 @@ export default function DashboardPage() {
                       </div>
                       {order.car_color && (
                         <div className="bg-yellow-50 rounded-lg px-3 py-2 text-xs text-yellow-700 mb-2">
-                          🚗 {order.car_color} {order.car_make_model} {order.license_plate && `· ${order.license_plate}`}
+                          🚗 {order.car_color} {order.car_make_model}{order.license_plate && ` · ${order.license_plate}`}
                         </div>
                       )}
                       {order.pickup_notes && (
@@ -257,17 +292,13 @@ export default function DashboardPage() {
                         </div>
                       )}
                       <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => updateStatus(order.id, "preparing")}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2.5 rounded-xl transition"
-                        >
+                        <button onClick={() => updateStatus(order.id, "preparing")}
+                          className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2.5 rounded-xl transition">
                           Start Preparing
                         </button>
                         {order.payment_status !== "paid" && (
-                          <button
-                            onClick={() => markPaid(order.id)}
-                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 px-3 rounded-xl transition"
-                          >
+                          <button onClick={() => markPaid(order.id)}
+                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 px-3 rounded-xl transition">
                             Paid
                           </button>
                         )}
@@ -278,7 +309,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* PREPARING COLUMN */}
+            {/* PREPARING */}
             <div className="flex-1 flex flex-col border-r border-gray-200 overflow-hidden">
               <div className="bg-white px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -322,13 +353,11 @@ export default function DashboardPage() {
                       </div>
                       {order.car_color && (
                         <div className="bg-yellow-50 rounded-lg px-3 py-2 text-xs text-yellow-700 mb-2">
-                          🚗 {order.car_color} {order.car_make_model} {order.license_plate && `· ${order.license_plate}`}
+                          🚗 {order.car_color} {order.car_make_model}{order.license_plate && ` · ${order.license_plate}`}
                         </div>
                       )}
-                      <button
-                        onClick={() => updateStatus(order.id, "ready")}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-xl transition mt-2"
-                      >
+                      <button onClick={() => updateStatus(order.id, "ready")}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-xl transition mt-2">
                         Mark Ready ✓
                       </button>
                     </div>
@@ -337,7 +366,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* READY COLUMN */}
+            {/* READY */}
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="bg-white px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -378,21 +407,17 @@ export default function DashboardPage() {
                       </div>
                       {order.car_color && (
                         <div className="bg-yellow-50 rounded-lg px-3 py-2 text-xs text-yellow-700 mb-2">
-                          🚗 {order.car_color} {order.car_make_model} {order.license_plate && `· ${order.license_plate}`}
+                          🚗 {order.car_color} {order.car_make_model}{order.license_plate && ` · ${order.license_plate}`}
                         </div>
                       )}
                       <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => updateStatus(order.id, "delivered")}
-                          className="flex-1 bg-gray-800 hover:bg-gray-900 text-white text-sm font-semibold py-2.5 rounded-xl transition"
-                        >
+                        <button onClick={() => updateStatus(order.id, "delivered")}
+                          className="flex-1 bg-gray-800 hover:bg-gray-900 text-white text-sm font-semibold py-2.5 rounded-xl transition">
                           Delivered ✓
                         </button>
                         {order.payment_status !== "paid" && (
-                          <button
-                            onClick={() => markPaid(order.id)}
-                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-semibold py-2.5 px-3 rounded-xl transition"
-                          >
+                          <button onClick={() => markPaid(order.id)}
+                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-semibold py-2.5 px-3 rounded-xl transition">
                             Paid
                           </button>
                         )}
@@ -405,10 +430,11 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* HISTORY TAB */}
         {activeTab === "history" && (
           <div className="flex-1 overflow-y-auto p-6">
             <h2 className="font-bold text-gray-900 text-xl mb-4">Order History</h2>
-            <div className="space-y-3">
+            <div className="space-y-3 max-w-2xl">
               {completedOrders.length === 0 && (
                 <div className="text-center py-20 text-gray-300">
                   <p className="text-5xl mb-3">📭</p>
@@ -424,7 +450,9 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-gray-900">${(order.total_cents / 100).toFixed(2)}</p>
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Delivered</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${order.payment_status === "paid" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
+                      {order.payment_status === "paid" ? "Paid" : "Unpaid"}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -432,6 +460,68 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* MENU TAB */}
+        {activeTab === "menu" && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="font-bold text-gray-900 text-xl">Menu Items</h2>
+                <p className="text-sm text-gray-400 mt-0.5">Toggle items on/off — changes are instant for customers</p>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="flex items-center gap-1.5 text-green-600">
+                  <span className="w-2.5 h-2.5 bg-green-500 rounded-full"></span>
+                  Available: {menuItems.filter(i => i.is_available).length}
+                </span>
+                <span className="flex items-center gap-1.5 text-red-500">
+                  <span className="w-2.5 h-2.5 bg-red-400 rounded-full"></span>
+                  Sold Out: {menuItems.filter(i => !i.is_available).length}
+                </span>
+              </div>
+            </div>
+            <div className="max-w-2xl space-y-5">
+              {menuCategories.map(cat => {
+                const catItems = menuItems.filter(i => i.category_id === cat.id);
+                if (catItems.length === 0) return null;
+                return (
+                  <div key={cat.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                      <h3 className="font-bold text-gray-800">{cat.name}</h3>
+                      <span className="text-xs text-gray-400">{catItems.filter(i => i.is_available).length}/{catItems.length} available</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {catItems.map(item => (
+                        <div key={item.id} className={`flex items-center justify-between px-5 py-4 transition ${!item.is_available ? "bg-gray-50" : ""}`}>
+                          <div className="flex-1">
+                            <p className={`font-medium ${item.is_available ? "text-gray-900" : "text-gray-400"}`}>
+                              {item.name}
+                              {!item.is_available && <span className="ml-2 text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full">Sold Out</span>}
+                            </p>
+                            <p className="text-sm text-gray-400">${(item.price_cents / 100).toFixed(2)}</p>
+                          </div>
+                          <div className="flex items-center gap-3 ml-4">
+                            <span className={`text-xs font-semibold hidden sm:block ${item.is_available ? "text-green-600" : "text-red-400"}`}>
+                              {item.is_available ? "Available" : "Off"}
+                            </span>
+                            <button
+                              onClick={() => toggleItemAvailability(item.id, item.is_available)}
+                              disabled={menuLoading}
+                              className={`relative w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 ${item.is_available ? "bg-green-500" : "bg-gray-300"}`}
+                            >
+                              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${item.is_available ? "translate-x-6" : "translate-x-0"}`}></span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SETTINGS TAB */}
         {activeTab === "settings" && (
           <div className="flex-1 overflow-y-auto p-6">
             <h2 className="font-bold text-gray-900 text-xl mb-6">Settings</h2>
@@ -442,12 +532,25 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-400">Brighton Beach · 713 Brighton Beach Ave</p>
               </div>
               <div className="border-t pt-4">
-                <p className="text-sm font-medium text-gray-700">Dashboard URL</p>
-                <p className="text-xs text-gray-400 break-all mt-1">curbsidenyc-app.vercel.app/dashboard/tashkent-halal-brighton</p>
+                <p className="text-sm font-medium text-gray-700 mb-1">Staff Dashboard URL</p>
+                <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-2 break-all">curbsidenyc-app.vercel.app/dashboard/tashkent-halal-brighton</p>
               </div>
               <div className="border-t pt-4">
-                <p className="text-sm font-medium text-gray-700">Customer Order URL</p>
-                <p className="text-xs text-gray-400 break-all mt-1">curbsidenyc-app.vercel.app/store/tashkent-halal-brighton</p>
+                <p className="text-sm font-medium text-gray-700 mb-1">Customer Order URL</p>
+                <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-2 break-all">curbsidenyc-app.vercel.app/store/tashkent-halal-brighton</p>
+              </div>
+              <div className="border-t pt-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Today&apos;s Summary</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-900">{todayOrders.length}</p>
+                    <p className="text-xs text-gray-400">Total Orders</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-green-700">${(todayOrders.reduce((s, o) => s + o.total_cents, 0) / 100).toFixed(0)}</p>
+                    <p className="text-xs text-gray-400">Revenue</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
